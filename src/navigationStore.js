@@ -514,6 +514,10 @@ class NavigationStore {
 
   onStateChange;
 
+  tmpBackCallbacks;
+
+  tmpBackParams = {};
+
   set externalState(state) {
     if (state && this.externalDispatch) {
       this.onNavigationStateChange(this.state, state, this.externalAction);
@@ -571,7 +575,20 @@ class NavigationStore {
     this.currentParams = { ...activeState.params, ...action.params };
     this.currentScene = currentScene;
     this.prevScene = this.prevState ? getActiveState(this.prevState).routeName : null;
+    
+    if(this.currentScene == this.prevScene && action && action.type == 'Navigation/COMPLETE_TRANSITION' && this.tmpBackParams && typeof(this.tmpBackParams[activeState.key]) != 'undefined') {
+      let params = Object.assign({key: activeState.key}, this.tmpBackParams[activeState.key]);
+      delete this.tmpBackParams[activeState.key];
+      this.dispatch(NavigationActions.setParams(params));
+    }
+       
     if (this.currentScene !== this.prevScene) {
+      let prvKey = (this.prevState)? getActiveState(this.prevState) : false;
+      if(prvKey && prvKey.key && this.tmpBackCallbacks && this.tmpBackCallbacks.prev == prvKey.key && action.type == 'Navigation/BACK') {
+        this.tmpBackParams[activeState.key] = Object.assign({}, this.tmpBackCallbacks.params);
+        this.tmpBackCallbacks = false;
+      }
+      
       // run onExit for old scene
       this.onExitHandler(this.prevScene);
       setTimeout(() => this.dispatch({
@@ -945,10 +962,11 @@ class NavigationStore {
     if (timeout) {
       setTimeout(() => this.pop(params), timeout);
     } else {
-      this.dispatch(NavigationActions.back({ key }));
-      if (res.refresh) {
-        this.refresh(res.refresh);
+      if(res.refresh) {
+        this.registerUpdateParamsAfterBack(getActiveState(this.state), res.refresh)
       }
+      
+      this.dispatch(NavigationActions.back({ key }));
     }
     return true;
   };
