@@ -40,6 +40,7 @@ let LeftNavBarButton;
 let BackNavBarButton;
 let counter = 0;
 
+
 export const actionMap = {
   [ActionConst.JUMP]: 'jump',
   [ActionConst.PUSH]: 'push',
@@ -123,6 +124,7 @@ function getProperties(component = {}) {
   delete res.children;
   return res;
 }
+
 function createTabBarOptions({
   tabBarStyle, activeTintColor, inactiveTintColor, activeBackgroundColor, inactiveBackgroundColor, showLabel, labelStyle, tabStyle, ...props
 }) {
@@ -138,6 +140,7 @@ function createTabBarOptions({
     tabStyle,
   };
 }
+
 function createNavigationOptions(params) {
   const {
     back,
@@ -487,6 +490,8 @@ function uniteParams(routeName, params) {
 const defaultSuccess = () => {};
 const defaultFailure = () => {};
 
+
+
 class NavigationStore {
   getStateForAction = null;
 
@@ -514,8 +519,9 @@ class NavigationStore {
 
   onStateChange;
 
-  tmpBackCallbacks;
 
+
+  tmpBackCallbacks;
   tmpBackParams = {};
 
   set externalState(state) {
@@ -523,6 +529,15 @@ class NavigationStore {
       this.onNavigationStateChange(this.state, state, this.externalAction);
       this.state = state;
     }
+  }
+
+
+  registerUpdateParamsAfterBack(prev, params) {
+    this.tmpBackCallbacks = {
+      prev: prev.key,
+      params: params
+    }
+    // console.log("{registerUpdateParamsAfterBack}", this.tmpBackCallbacks)
   }
 
   setCustomReducer = (Navigator) => {
@@ -552,6 +567,7 @@ class NavigationStore {
   };
 
   onExitHandler = (prevScene) => {
+
     if (prevScene) {
       const exitHandler = this[prevScene + OnExit];
       if (exitHandler) {
@@ -568,6 +584,7 @@ class NavigationStore {
   };
 
   onNavigationStateChange = async (prevState, currentState, action) => {
+
     this.state = currentState;
     this.prevState = prevState;
     const activeState = getActiveState(this.state);
@@ -575,27 +592,37 @@ class NavigationStore {
     this.currentParams = { ...activeState.params, ...action.params };
     this.currentScene = currentScene;
     this.prevScene = this.prevState ? getActiveState(this.prevState).routeName : null;
-    
+
+    // console.log('CHANGE STATE', this.currentScene, this.prevScene, activeState.key, action)
+
     if(this.currentScene == this.prevScene && action && action.type == 'Navigation/COMPLETE_TRANSITION' && this.tmpBackParams && typeof(this.tmpBackParams[activeState.key]) != 'undefined') {
-      let params = Object.assign({key: activeState.key}, this.tmpBackParams[activeState.key]);
+      let params = Object.assign({}, this.tmpBackParams[activeState.key]);
       delete this.tmpBackParams[activeState.key];
-      this.dispatch(NavigationActions.setParams(params));
+      this.dispatch(NavigationActions.setParams({
+        key: activeState.key,
+        params: params
+      }));
     }
-       
+
     if (this.currentScene !== this.prevScene) {
+      // prepare uppdate params
+
       let prvKey = (this.prevState)? getActiveState(this.prevState) : false;
-      if(prvKey && prvKey.key && this.tmpBackCallbacks && this.tmpBackCallbacks.prev == prvKey.key && action.type == 'Navigation/BACK') {
+      if(prvKey && prvKey.key && this.tmpBackCallbacks && this.tmpBackCallbacks.prev == prvKey.key && (action.type == 'Navigation/BACK' || action.type == 'REACT_NATIVE_ROUTER_FLUX_POP_TO')) {
         this.tmpBackParams[activeState.key] = Object.assign({}, this.tmpBackCallbacks.params);
         this.tmpBackCallbacks = false;
       }
-      
+
       // run onExit for old scene
       this.onExitHandler(this.prevScene);
-      setTimeout(() => this.dispatch({
-        type: ActionConst.FOCUS,
-        routeName: this.currentScene,
-        params: this.currentParams,
-      }));
+      setTimeout(() => {
+        this.dispatch({
+          type: ActionConst.FOCUS,
+          routeName: this.currentScene,
+          params: this.currentParams,
+        })
+      });
+
       this.onEnterHandler(currentScene);
     } else {
       const routeName = getRouteNameByKey(this.state, action.key);
@@ -636,6 +663,7 @@ class NavigationStore {
   };
 
   processScene = (scene: Scene, inheritProps = {}, clones = [], wrapBy) => {
+    console.log('PROCESS SCENE')
     assert(scene.props, 'props should be defined');
     if (!scene.props.children) {
       return null;
@@ -909,7 +937,7 @@ class NavigationStore {
       this.externalAction = action;
       this.externalDispatch(action);
     } else if (this._navigator) {
-      this._navigator.dispatch(action);
+      return this._navigator.dispatch(action);
     }
   };
 
@@ -949,6 +977,7 @@ class NavigationStore {
   refresh = (data, sceneKey = null) => {
     const params = filterParam(data);
     const { key } = getActiveState(this.state);
+
     this.dispatch(
       NavigationActions.setParams({
         key: sceneKey || key,
@@ -965,14 +994,18 @@ class NavigationStore {
       if(res.refresh) {
         this.registerUpdateParamsAfterBack(getActiveState(this.state), res.refresh)
       }
-      
+
       this.dispatch(NavigationActions.back({ key }));
     }
     return true;
   };
 
-  popTo = (routeName, data) => {
-    const params = filterParam(data);
+
+  popTo = (routeName, params) => {
+    if(params && typeof(params.refresh) != 'undefined') {
+      this.registerUpdateParamsAfterBack(getActiveState(this.state), params.refresh)
+    }
+
     this.dispatch({ type: ActionConst.POP_TO, routeName, params });
   };
 
